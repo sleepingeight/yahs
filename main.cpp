@@ -18,7 +18,7 @@
 #include <thread>
 #include <vector>
 
-constexpr const char* SERVER_STRING = "Server: yahs/0.1\r\n";
+constexpr const char *SERVER_STRING = "Server: yahs/0.1\r\n";
 constexpr int DEFAULT_SERVER_PORT = 8000;
 constexpr int QUEUE_DEPTH = 512;
 constexpr int READ_SZ = 8192;
@@ -31,7 +31,7 @@ constexpr int MIN_KERNEL_VERSION = 5;
 constexpr int MIN_MAJOR_VERSION = 5;
 
 /* Prebuilt static responses */
-static const char* unimplemented_content =
+static const char *unimplemented_content =
     "HTTP/1.0 400 Bad Request\r\n"
     "Content-type: text/html\r\n"
     "\r\n"
@@ -44,7 +44,7 @@ static const char* unimplemented_content =
     "</body>"
     "</html>";
 
-static const char* http_404_content =
+static const char *http_404_content =
     "HTTP/1.0 404 Not Found\r\n"
     "Content-type: text/html\r\n"
     "\r\n"
@@ -59,15 +59,15 @@ static const char* http_404_content =
 
 struct Request {
   int eventType;
-  int iovecCount;     // number of iovecs in 'iov'
-  int clientSocket;   // valid for READ/WRITE
-  struct iovec* iov;  // dynamically allocated array of iovec
+  int iovecCount;    // number of iovecs in 'iov'
+  int clientSocket;  // valid for READ/WRITE
+  struct iovec *iov; // dynamically allocated array of iovec
 
   Request(int ev, int sock = -1)
       : eventType(ev), iovecCount(0), clientSocket(sock), iov(nullptr) {}
 };
 
-static void fatalError(const char* syscall) {
+static void fatalError(const char *syscall) {
   perror(syscall);
   std::exit(1);
 }
@@ -81,9 +81,9 @@ static bool checkKernelVersion() {
 
   int verMajor = 0, verMinor = 0;
   {
-    const char* p = buffer.release;
+    const char *p = buffer.release;
     if (std::isdigit(*p)) {
-      verMajor = std::strtol(p, const_cast<char**>(&p), 10);
+      verMajor = std::strtol(p, const_cast<char **>(&p), 10);
       if (*p == '.') {
         ++p;
         verMinor = std::strtol(p, nullptr, 10);
@@ -114,37 +114,40 @@ static void checkForIndexFile() {
   }
 }
 
-static void toLowerCase(char* str) {
+static void toLowerCase(char *str) {
   for (; *str; ++str) {
     *str = static_cast<char>(std::tolower(*str));
   }
 }
 
-static void addAcceptRequest(int serverSocket, struct sockaddr_in* clientAddr,
-                             socklen_t* clientAddrLen, io_uring* ringPtr) {
-  struct io_uring_sqe* sqe = io_uring_get_sqe(ringPtr);
-  if (!sqe) fatalError("io_uring_get_sqe (accept)");
+static void addAcceptRequest(int serverSocket, struct sockaddr_in *clientAddr,
+                             socklen_t *clientAddrLen, io_uring *ringPtr) {
+  struct io_uring_sqe *sqe = io_uring_get_sqe(ringPtr);
+  if (!sqe)
+    fatalError("io_uring_get_sqe (accept)");
 
   io_uring_prep_accept(sqe, serverSocket,
-                       reinterpret_cast<struct sockaddr*>(clientAddr),
+                       reinterpret_cast<struct sockaddr *>(clientAddr),
                        clientAddrLen, 0);
 
-  Request* req = new Request(EVENT_TYPE_ACCEPT);
+  Request *req = new Request(EVENT_TYPE_ACCEPT);
   io_uring_sqe_set_data(sqe, req);
 
   int ret = io_uring_submit(ringPtr);
-  if (ret < 0) fatalError("io_uring_submit (accept)");
+  if (ret < 0)
+    fatalError("io_uring_submit (accept)");
 }
 
-static void addReadRequest(int clientSocket, io_uring* ringPtr) {
-  struct io_uring_sqe* sqe = io_uring_get_sqe(ringPtr);
-  if (!sqe) fatalError("io_uring_get_sqe (read)");
+static void addReadRequest(int clientSocket, io_uring *ringPtr) {
+  struct io_uring_sqe *sqe = io_uring_get_sqe(ringPtr);
+  if (!sqe)
+    fatalError("io_uring_get_sqe (read)");
 
-  Request* req = new Request(EVENT_TYPE_READ, clientSocket);
+  Request *req = new Request(EVENT_TYPE_READ, clientSocket);
   req->iovecCount = 1;
   req->iov = new iovec[1];
 
-  char* buf = new char[READ_SZ];
+  char *buf = new char[READ_SZ];
   std::memset(buf, 0, READ_SZ);
   req->iov[0].iov_base = buf;
   req->iov[0].iov_len = READ_SZ;
@@ -153,29 +156,32 @@ static void addReadRequest(int clientSocket, io_uring* ringPtr) {
   io_uring_sqe_set_data(sqe, req);
 
   int ret = io_uring_submit(ringPtr);
-  if (ret < 0) fatalError("io_uring_submit (read)");
+  if (ret < 0)
+    fatalError("io_uring_submit (read)");
 }
 
-static void addWriteRequest(Request* req, io_uring* ringPtr) {
-  struct io_uring_sqe* sqe = io_uring_get_sqe(ringPtr);
-  if (!sqe) fatalError("io_uring_get_sqe (write)");
+static void addWriteRequest(Request *req, io_uring *ringPtr) {
+  struct io_uring_sqe *sqe = io_uring_get_sqe(ringPtr);
+  if (!sqe)
+    fatalError("io_uring_get_sqe (write)");
 
   req->eventType = EVENT_TYPE_WRITE;
   io_uring_prep_writev(sqe, req->clientSocket, req->iov, req->iovecCount, 0);
   io_uring_sqe_set_data(sqe, req);
 
   int ret = io_uring_submit(ringPtr);
-  if (ret < 0) fatalError("io_uring_submit (write)");
+  if (ret < 0)
+    fatalError("io_uring_submit (write)");
 }
 
-static void sendStaticString(const char* str, int clientSocket,
-                             io_uring* ringPtr) {
+static void sendStaticString(const char *str, int clientSocket,
+                             io_uring *ringPtr) {
   size_t slen = std::strlen(str);
-  Request* req = new Request(EVENT_TYPE_WRITE, clientSocket);
+  Request *req = new Request(EVENT_TYPE_WRITE, clientSocket);
   req->iovecCount = 1;
   req->iov = new iovec[1];
 
-  char* buf = new char[slen];
+  char *buf = new char[slen];
   std::memcpy(buf, str, slen);
   req->iov[0].iov_base = buf;
   req->iov[0].iov_len = slen;
@@ -183,23 +189,23 @@ static void sendStaticString(const char* str, int clientSocket,
   addWriteRequest(req, ringPtr);
 }
 
-static void handleUnimplementedMethod(int clientSocket, io_uring* ringPtr) {
+static void handleUnimplementedMethod(int clientSocket, io_uring *ringPtr) {
   sendStaticString(unimplemented_content, clientSocket, ringPtr);
 }
 
-static void handleHttp404(int clientSocket, io_uring* ringPtr) {
+static void handleHttp404(int clientSocket, io_uring *ringPtr) {
   sendStaticString(http_404_content, clientSocket, ringPtr);
 }
 
 /* Read entire file into a newly allocated buffer, attach it to iovec */
-static void copyFileContents(const std::string& filePath, off_t fileSize,
-                             iovec* outIov) {
+static void copyFileContents(const std::string &filePath, off_t fileSize,
+                             iovec *outIov) {
   int fd = open(filePath.c_str(), O_RDONLY);
   if (fd < 0) {
     fatalError("open (copyFileContents)");
   }
 
-  char* buf = new char[fileSize];
+  char *buf = new char[fileSize];
   ssize_t bytesRead = ::read(fd, buf, fileSize);
   if (bytesRead < 0) {
     close(fd);
@@ -215,23 +221,25 @@ static void copyFileContents(const std::string& filePath, off_t fileSize,
   outIov->iov_len = fileSize;
 }
 
-static std::string getFilenameExt(const std::string& filename) {
+static std::string getFilenameExt(const std::string &filename) {
   size_t pos = filename.find_last_of('.');
-  if (pos == std::string::npos || pos + 1 >= filename.size()) return "";
+  if (pos == std::string::npos || pos + 1 >= filename.size())
+    return "";
   return filename.substr(pos + 1);
 }
 
 /* Send HTTP/1.0 200 OK headers into the first 5 iovecs.
  * iov must have space for at least 5 entries. */
-static void sendHeaders(const std::string& path, off_t len, iovec* iov) {
+static void sendHeaders(const std::string &path, off_t len, iovec *iov) {
   std::string lowerPath = path;
-  for (auto& c : lowerPath) c = static_cast<char>(std::tolower(c));
+  for (auto &c : lowerPath)
+    c = static_cast<char>(std::tolower(c));
 
   // iov[0]: "HTTP/1.0 200 OK\r\n"
   {
-    const char* hdr = "HTTP/1.0 200 OK\r\n";
+    const char *hdr = "HTTP/1.0 200 OK\r\n";
     size_t slen = std::strlen(hdr);
-    char* buf = new char[slen];
+    char *buf = new char[slen];
     std::memcpy(buf, hdr, slen);
     iov[0].iov_base = buf;
     iov[0].iov_len = slen;
@@ -240,7 +248,7 @@ static void sendHeaders(const std::string& path, off_t len, iovec* iov) {
   // iov[1]: SERVER_STRING
   {
     size_t slen = std::strlen(SERVER_STRING);
-    char* buf = new char[slen];
+    char *buf = new char[slen];
     std::memcpy(buf, SERVER_STRING, slen);
     iov[1].iov_base = buf;
     iov[1].iov_len = slen;
@@ -248,7 +256,7 @@ static void sendHeaders(const std::string& path, off_t len, iovec* iov) {
 
   // iov[2]: Content-Type based on extension
   std::string ext = getFilenameExt(lowerPath);
-  std::string contentType = "Content-Type: text/plain\r\n";  // fallback
+  std::string contentType = "Content-Type: text/plain\r\n"; // fallback
   if (ext == "jpg" || ext == "jpeg") {
     contentType = "Content-Type: image/jpeg\r\n";
   } else if (ext == "png") {
@@ -267,7 +275,7 @@ static void sendHeaders(const std::string& path, off_t len, iovec* iov) {
 
   {
     size_t slen = contentType.size();
-    char* buf = new char[slen];
+    char *buf = new char[slen];
     std::memcpy(buf, contentType.c_str(), slen);
     iov[2].iov_base = buf;
     iov[2].iov_len = slen;
@@ -280,7 +288,7 @@ static void sendHeaders(const std::string& path, off_t len, iovec* iov) {
         std::snprintf(lenBuf, sizeof(lenBuf), "Content-Length: %lld\r\n",
                       static_cast<long long>(len));
     size_t slen = static_cast<size_t>(written);
-    char* buf = new char[slen];
+    char *buf = new char[slen];
     std::memcpy(buf, lenBuf, slen);
     iov[3].iov_base = buf;
     iov[3].iov_len = slen;
@@ -288,9 +296,9 @@ static void sendHeaders(const std::string& path, off_t len, iovec* iov) {
 
   // iov[4]: blank line "\r\n"
   {
-    const char* brk = "\r\n";
+    const char *brk = "\r\n";
     size_t slen = std::strlen(brk);
-    char* buf = new char[slen];
+    char *buf = new char[slen];
     std::memcpy(buf, brk, slen);
     iov[4].iov_base = buf;
     iov[4].iov_len = slen;
@@ -298,8 +306,8 @@ static void sendHeaders(const std::string& path, off_t len, iovec* iov) {
 }
 
 /* Handle a GET request: determine final path, stat it, and serve or 404 */
-static void handleGetMethod(const std::string& rawPath, int clientSocket,
-                            io_uring* ringPtr) {
+static void handleGetMethod(const std::string &rawPath, int clientSocket,
+                            io_uring *ringPtr) {
   std::string finalPath = "public";
   if (!rawPath.empty() && rawPath.back() == '/') {
     finalPath += rawPath + "index.html";
@@ -309,14 +317,15 @@ static void handleGetMethod(const std::string& rawPath, int clientSocket,
 
   struct stat st;
   if (stat(finalPath.c_str(), &st) < 0) {
-    // std::cout << "404 Not Found: " << finalPath << " (" << rawPath << ")\n";
+    // std::cout << "404 Not Found: " << finalPath << " (" << rawPath <<
+    // ")\n";
     handleHttp404(clientSocket, ringPtr);
     return;
   }
 
   if (S_ISREG(st.st_mode)) {
     // Prepare a Request with 6 iovecs: 5 for headers, 1 for file body
-    Request* req = new Request(EVENT_TYPE_WRITE, clientSocket);
+    Request *req = new Request(EVENT_TYPE_WRITE, clientSocket);
     req->iovecCount = 6;
     req->iov = new iovec[6];
 
@@ -334,19 +343,20 @@ static void handleGetMethod(const std::string& rawPath, int clientSocket,
   }
 }
 
-static void handleHttpMethod(char* methodBuffer, int clientSocket,
-                             io_uring* ringPtr) {
+static void handleHttpMethod(char *methodBuffer, int clientSocket,
+                             io_uring *ringPtr) {
   // methodBuffer contains something like "GET /path HTTP/1.1\r\n..."
   // Extract method and path
-  char* saveptr = nullptr;
-  char* method = strtok_r(methodBuffer, " ", &saveptr);
+  char *saveptr = nullptr;
+  char *method = strtok_r(methodBuffer, " ", &saveptr);
   if (!method) {
     handleUnimplementedMethod(clientSocket, ringPtr);
     return;
   }
-  for (char* p = method; *p; ++p) *p = static_cast<char>(std::tolower(*p));
+  for (char *p = method; *p; ++p)
+    *p = static_cast<char>(std::tolower(*p));
 
-  char* path = strtok_r(nullptr, " ", &saveptr);
+  char *path = strtok_r(nullptr, " ", &saveptr);
   if (!path) {
     handleUnimplementedMethod(clientSocket, ringPtr);
     return;
@@ -359,7 +369,7 @@ static void handleHttpMethod(char* methodBuffer, int clientSocket,
   }
 }
 
-static bool getRequestLine(const char* src, char* dest, int destSz) {
+static bool getRequestLine(const char *src, char *dest, int destSz) {
   for (int i = 0; i + 1 < destSz; ++i) {
     dest[i] = src[i];
     if (src[i] == '\r' && src[i + 1] == '\n') {
@@ -370,10 +380,10 @@ static bool getRequestLine(const char* src, char* dest, int destSz) {
   return false;
 }
 
-static void handleClientRequest(Request* req, io_uring* ringPtr) {
+static void handleClientRequest(Request *req, io_uring *ringPtr) {
   // Buffer from the read is in req->iov[0].iov_base
   char httpRequest[1024];
-  if (!getRequestLine(reinterpret_cast<const char*>(req->iov[0].iov_base),
+  if (!getRequestLine(reinterpret_cast<const char *>(req->iov[0].iov_base),
                       httpRequest, sizeof(httpRequest))) {
     std::cerr << "Malformed request\n";
     return;
@@ -389,20 +399,20 @@ static void workerLoop(int serverSocket) {
   }
 
   // Used for accepts:
-  struct sockaddr_in clientAddr{};
+  struct sockaddr_in clientAddr {};
   socklen_t clientAddrLen = sizeof(clientAddr);
 
   // Submit the very first accept on *this* ring
   addAcceptRequest(serverSocket, &clientAddr, &clientAddrLen, &ring);
 
   while (true) {
-    struct io_uring_cqe* cqe;
+    struct io_uring_cqe *cqe;
     int ret = io_uring_wait_cqe(&ring, &cqe);
     if (ret < 0) {
       fatalError("io_uring_wait_cqe (worker)");
     }
 
-    Request* req = reinterpret_cast<Request*>(io_uring_cqe_get_data(cqe));
+    Request *req = reinterpret_cast<Request *>(io_uring_cqe_get_data(cqe));
     if (cqe->res < 0) {
       std::cerr << "Async request failed: "
                 << std::strerror(static_cast<int>(-cqe->res))
@@ -411,53 +421,55 @@ static void workerLoop(int serverSocket) {
     }
 
     switch (req->eventType) {
-      case EVENT_TYPE_ACCEPT: {
-        // cqe->res is the new client socket
-        int clientSock = cqe->res;
+    case EVENT_TYPE_ACCEPT: {
+      // cqe->res is the new client socket
+      int clientSock = cqe->res;
 
-        // Immediately re‐submit ACCEPT on *this* ring for the next incoming
-        // connection
-        addAcceptRequest(serverSocket, &clientAddr, &clientAddrLen, &ring);
+      // Immediately re‐submit ACCEPT on *this* ring for the next
+      // incoming connection
+      addAcceptRequest(serverSocket, &clientAddr, &clientAddrLen, &ring);
 
-        // Now submit a READ for this newly accepted client
-        addReadRequest(clientSock, &ring);
+      // Now submit a READ for this newly accepted client
+      addReadRequest(clientSock, &ring);
 
-        // We don't have any buffers to free in an ACCEPT req
-        delete req;
-        break;
+      // We don't have any buffers to free in an ACCEPT req
+      delete req;
+      break;
+    }
+
+    case EVENT_TYPE_READ: {
+      // cqe->res > 0 means number of bytes read (or 0 if connection
+      // closed)
+      if (cqe->res == 0) {
+        // Client closed immediately; just clean up
+      } else {
+        handleClientRequest(req, &ring);
       }
+      // Free the read buffer and the Request struct
+      char *readBuf = reinterpret_cast<char *>(req->iov[0].iov_base);
+      delete[] readBuf;
+      delete[] req->iov;
+      delete req;
+      break;
+    }
 
-      case EVENT_TYPE_READ: {
-        // cqe->res > 0 means number of bytes read (or 0 if connection closed)
-        if (cqe->res == 0) {
-          // Client closed immediately; just clean up
-        } else {
-          handleClientRequest(req, &ring);
-        }
-        // Free the read buffer and the Request struct
-        char* readBuf = reinterpret_cast<char*>(req->iov[0].iov_base);
-        delete[] readBuf;
-        delete[] req->iov;
-        delete req;
-        break;
+    case EVENT_TYPE_WRITE: {
+      // After writing, free all buffers in req->iov[], then close the
+      // socket
+      for (int i = 0; i < req->iovecCount; ++i) {
+        char *buf = reinterpret_cast<char *>(req->iov[i].iov_base);
+        delete[] buf;
       }
+      delete[] req->iov;
+      close(req->clientSocket);
+      delete req;
+      break;
+    }
 
-      case EVENT_TYPE_WRITE: {
-        // After writing, free all buffers in req->iov[], then close the socket
-        for (int i = 0; i < req->iovecCount; ++i) {
-          char* buf = reinterpret_cast<char*>(req->iov[i].iov_base);
-          delete[] buf;
-        }
-        delete[] req->iov;
-        close(req->clientSocket);
-        delete req;
-        break;
-      }
-
-      default:
-        std::cerr << "Unknown event type: " << req->eventType << "\n";
-        delete req;
-        std::exit(1);
+    default:
+      std::cerr << "Unknown event type: " << req->eventType << "\n";
+      delete req;
+      std::exit(1);
     }
 
     io_uring_cqe_seen(&ring, cqe);
@@ -497,13 +509,13 @@ int main() {
     fatalError("setsockopt(SO_REUSEPORT)");
   }
 
-  struct sockaddr_in srvAddr{};
+  struct sockaddr_in srvAddr {};
   std::memset(&srvAddr, 0, sizeof(srvAddr));
   srvAddr.sin_family = AF_INET;
   srvAddr.sin_port = htons(DEFAULT_SERVER_PORT);
   srvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-  if (bind(serverSocket, reinterpret_cast<const struct sockaddr*>(&srvAddr),
+  if (bind(serverSocket, reinterpret_cast<const struct sockaddr *>(&srvAddr),
            sizeof(srvAddr)) < 0) {
     fatalError("bind()");
   }

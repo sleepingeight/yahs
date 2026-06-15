@@ -6,6 +6,25 @@ project(
     DESCRIPTION "io-uring based static webserver"
 )
 
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+
+option(
+    SYSTEM_LIBURING 
+    "Option to use system-wide installed liburing. [Default = OFF]"
+    OFF
+)
+option(
+    ENABLE_TESTS
+    "Option to enable tests. [Default = OFF]"
+    ON
+)
+
+
+# Enable debug symbols and preserve frame pointers for accurate perf profiling
+add_compile_options(-g -fno-omit-frame-pointer)
+
 # Export & symlink compile commands for language servers/LSPs
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(UNIX)
@@ -42,13 +61,6 @@ else()
     endif()
     message(STATUS "Performing Test HAVE_IOURING - Success")
 endif()
-
-option(
-    SYSTEM_LIBURING 
-    "Option to use system-wide installed liburing. [Default = OFF]"
-    OFF
-)
-
 find_package(Threads REQUIRED)
 
 if(SYSTEM_LIBURING) 
@@ -70,9 +82,10 @@ else()
     
     ExternalProject_Add(liburing_project
         GIT_REPOSITORY    "https://github.com/axboe/liburing.git"
-        GIT_TAG           "liburing-2.14"
+        GIT_TAG           "e3d35ea59d3ba09075ed4d7751e4bb9049cce64a"
         PREFIX            "${CMAKE_BINARY_DIR}/liburing"
         BUILD_IN_SOURCE   1
+        UPDATE_COMMAND    ""
         CONFIGURE_COMMAND ./configure --prefix=${LIBURING_INSTALL_DIR} --libdir=${LIBURING_INSTALL_DIR}/lib --libdevdir=${LIBURING_INSTALL_DIR}/lib --cc=${CMAKE_C_COMPILER} --cxx=${CMAKE_CXX_COMPILER}
         BUILD_COMMAND     make -j5
         INSTALL_COMMAND   make install
@@ -94,3 +107,20 @@ target_link_libraries(yahs PRIVATE
     liburing::liburing
     Threads::Threads
 )
+
+if(ENABLE_TESTS) 
+    enable_testing()
+    
+    include(FetchContent)
+    FetchContent_Declare(
+      googletest
+      URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    )
+    FetchContent_MakeAvailable(googletest)
+
+    add_executable(test_parser tests/test_parser.cpp)
+    target_include_directories(test_parser PRIVATE include)
+    target_compile_features(test_parser PRIVATE cxx_std_23)
+    target_link_libraries(test_parser PRIVATE GTest::gtest_main GTest::gtest)
+    add_test(NAME test_parser COMMAND test_parser)
+endif()
